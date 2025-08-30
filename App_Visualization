@@ -1,0 +1,115 @@
+import sqlite3
+import pandas as pd
+from dash import Dash, dcc, html, dash_table, Output, Input
+import plotly.graph_objs as go
+
+# Connect to your SQLite database
+conn = sqlite3.connect("/Users/danielmansfield/NVDAHISTORY2025.db")
+
+# Load data from a table into a DataFrame
+data = pd.read_sql_query("SELECT * FROM History", conn)
+
+# Close the connection
+conn.close()
+
+# Convert date column to datetime
+data["Date"] = pd.to_datetime(data["Date"], format="%m/%d/%Y")
+
+# Compute Moving Average
+data["MA20"] = data["Close"].rolling(window=20).mean()
+
+
+# Initialize the Dash app
+app = Dash(__name__)
+
+# App Layout
+app.layout = html.Div(
+    style={"backgroundColor": "white", "padding": "20px"},
+    children=[
+        html.H1(
+            "Checklist Stock Dashboard",
+            style={"fontSize": "48px", "color": "Green", "textAlign": "center"},
+        ),
+
+        html.P(
+            "Select stock metrics to display:",
+            style={"color": "black", "textAlign": "center"},
+        ),
+
+        # Stock metrics checklist
+        dcc.Checklist(
+            id="graph-selector",
+            options=[
+                {"label": "Open Price", "value": "Open"},
+                {"label": "Close Price", "value": "Close"},
+                {"label": "Low Price", "value": "Low"},
+                {"label": "Volume", "value": "Volume"},
+            ],
+            value=["Open"],  # Default selection
+            style={"color": "black", "textAlign": "center", "margin": "20px"},
+        ),
+
+        # Moving Average selector
+        dcc.Checklist(
+            id="ma-selector",
+            options=[{"label": "Show 20-Day Moving Average (Close)", "value": "MA20"}],
+            value=[],
+            style={"color": "white", "textAlign": "center", "margin": "20px"},
+        ),
+
+        # Graph container
+        dcc.Graph(id="price-graph"),
+
+
+    ],
+)
+
+# Callback to update graph based on checklist selections
+@app.callback(
+    Output("price-graph", "figure"),
+    Input("graph-selector", "value"),
+    Input("ma-selector", "value"),
+)
+def update_graph(selected_columns, selected_mas):
+    fig = go.Figure()
+
+    # Add selected stock metrics
+    for col in selected_columns:
+        trace_type = go.Bar if col == "Volume" else go.Scatter
+        trace_kwargs = {
+            "x": data["Date"],
+            "y": data[col],
+            "name": col,
+        }
+        if col == "Volume":
+            trace_kwargs["marker_color"] = "orange"
+        else:
+            trace_kwargs.update({"mode": "lines+markers", "line": dict(width=2)})
+
+        fig.add_trace(trace_type(**trace_kwargs))
+
+    # Add 20-day MA if selected
+    if "MA20" in selected_mas and "Close" in selected_columns:
+        fig.add_trace(go.Scatter(
+            x=data["Date"],
+            y=data["MA20"],
+            mode="lines",
+            name="20-Day MA (Close)",
+            line=dict(color="red", dash="dash")
+        ))
+
+    fig.add_trace(go.Candlestick(
+    x=data["Date"],
+    open=data["Open"],
+    high=data["High"],
+    low=data["Low"],
+    close=data["Close"],
+    name="Candlestick"
+))
+
+
+    return fig
+
+# Run the server
+if __name__ == "__main__":
+    app.run_server(port=8501, debug=True)
