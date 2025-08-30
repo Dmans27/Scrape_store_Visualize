@@ -1,0 +1,66 @@
+import requests
+from bs4 import BeautifulSoup
+import pandas as pd
+from datetime import datetime
+
+# URL to scrape
+url = 'https://stockanalysis.com/stocks/amzn/history/'
+
+# Fetch content
+response = requests.get(url)
+soup = BeautifulSoup(response.content, 'html.parser')
+
+# Find the first table with that class
+table = soup.find('table', {"class": "svelte-1swpzu1"})
+
+# Initialize data storage
+data = []
+
+# Find all rows
+rows = table.find_all('tr', {"class":"svelte-1swpzu1"})
+
+# Get headers from the first row
+headers = [th.get_text(strip=True) for th in rows[0].find_all('th')]
+
+# List of column names to drop
+columns_to_drop = ['Adj. Close', 'Change']
+
+# Find indexes of those columns
+drop_indexes = [headers.index(col) for col in columns_to_drop if col in headers]
+
+# Sort indexes in descending order so we can safely pop them
+drop_indexes.sort(reverse=True)
+
+# Remove them from headers
+for idx in drop_indexes:
+    headers.pop(idx)
+
+# Get data from the remaining rows
+for row in rows[1:]:
+    cols = [td.get_text(strip=True) for td in row.find_all('td')]
+
+    if not cols:
+        continue
+
+    # Remove values at drop_indexes
+    for idx in drop_indexes:
+        if len(cols) > idx:
+            cols.pop(idx)
+
+    # Format values while scraping
+    if len(cols) == len(headers):
+        # Convert Date to YYYY-MM-DD
+        try:
+            cols[0] = datetime.strptime(cols[0], '%b %d, %Y').strftime('%m/%d/%Y')
+        except ValueError:
+            pass  # skip if parsing fails
+
+    data.append(cols)
+
+# Create DataFrame
+df = pd.DataFrame(data, columns=headers)
+
+# Save to CSV
+df.to_csv("NVDA__history.csv", index=False)
+
+print("Table scraped and saved successfully.")
